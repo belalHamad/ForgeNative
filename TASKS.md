@@ -1704,6 +1704,15 @@ this must never lose or silently overwrite a user's real data.** Concretely, whe
 
 ## Notes for whoever (or whichever autonomous pass) picks this up next
 
+- **Read-only audit note (added 2026-08-07):** an audit pass over this file (internal
+  consistency + cross-check against real code) may run before implementation resumes. That
+  pass is explicitly **read-only** — it must not edit this file or any code file, only produce
+  a findings report for Bilal to review. Any future audit invoked this way should not assume
+  permission to self-correct even obviously-stale entries; that's a deliberate, explicit
+  restriction for that pass specifically (contrast with this file's own general standing rule
+  elsewhere about correcting stale entries during normal implementation work, which still
+  applies once real implementation resumes).
+
 - **Mandatory pre-task check — do this before writing a single line for any item below:** open the
   file(s) this item names as "Verified:" (or, if it has none yet, search the codebase for the
   feature/symbol this item describes) and confirm with your own eyes whether it's actually already
