@@ -366,6 +366,19 @@ fits) before being marked done — no "looks right."
   — mirrors the mosque feature's "completed at mosque vs. not" pattern (a boolean/enum flag
   on `Completion`, read by `MilestoneEngine.catchUpPoints()` for the bonus, surfaced in
   Progress stats). Reuse that exact mechanism rather than inventing a parallel one.
+- **Panel content depends on the dhikr's shape (resolved 2026-08-07, closing the A1 conflict
+  the audit found):** the glass-panel/big-display pattern is one shared visual system, but what's
+  *inside* it differs by habit — a **Tasbih habit** (this Phase's Group-2 templates: Subhanallah,
+  Alhamdulillah, Allahu Akbar, Istighfar, Salawat, Tahlil, Hawqalah) shows the plain tap-to-count
+  control described above (one dhikr, running count toward goal). **Adhkar after Prayer** (Phase
+  C, a *different* habit — the 5-separate-habits-consolidated-into-one) shows the **cycling**
+  variant instead: "1 of 5" progression through whichever prayer's adhkar window is currently
+  open, exactly as Phase C already specifies — that design doesn't change, this note just makes
+  explicit that it's the same panel system as this Phase's tasbih counter, not a third pattern.
+  **Phase 6's already-shipped dhikr habits (plain quantity, no panel) need to be reworked onto
+  this tasbih-counter panel** when this Phase is picked up — they were built under the now-
+  superseded "no panel" decision (see the note above) and are not being left as a legacy
+  alternate interaction.
 - **Two new dhikr templates**: Tahlil ("La ilaha illallah") and Hawqalah ("La hawla wa la
   quwwata illa billah al-'Aliyy al-'Azim") — same shape as the existing 5 (goal/step
   defaults reasoned the same way the existing 5 were).
@@ -465,12 +478,17 @@ week Bilal prayed Fajr at the mosque 5/5 times"). This phase **cannot start unti
 (Groups core, CloudKit)** exists, since "who else in my group did X" is fundamentally a
 group-data question. When picked up: extend the already-planned `MosqueLocation`/
 `Completion.completedAtMosqueID` work (unchanged) plus a `GroupHabitRace` record type (see
-Phase F's model list) that a mosque-completion can trigger/update.
+**Phase G item #6, Habit Races** — corrected 2026-08-07, was misattributed to "Phase F's model
+list" here; Phase F's actual model list is only `Group`/`GroupSharedHabit`/
+`GroupHabitCompletion`, `GroupHabitRace` doesn't exist there — meaning this phase's real
+dependency is Phase G #6, not just Phase F, so pull G #6 forward if this phase is scheduled soon
+after Phase F) that a mosque-completion can trigger/update.
 
 ### Phase E — Milestones: real 3D achievement system (no dependencies, can run any time)
 **Decided (2026-08-03), grounded in this app's actual current milestone data** (verified via
 `MilestoneEngine.swift`/`MilestoneKind.swift`): 4 streak thresholds (7/30/100/365) × 3
-categories (Good/Bad/To-Do) + unbounded per-habit streaks + 5 points thresholds (50/100/250/
+categories (display names now Build/Destroy/Tasks, renamed 2026-08-07 — see the §4 P3 entry below)
++ unbounded per-habit streaks + 5 points thresholds (50/100/250/
 500/1000) + monthly per-category challenges. This maps cleanly onto a **small reusable base
 model + material system** (exactly Bilal's own proposed architecture) rather than hundreds of
 unique assets:
@@ -629,6 +647,39 @@ may mean "show your exact social media minutes inside Forge's own UI" isn't achi
 a normal in-app metric is, and the real feature shape ends up closer to "did you stay under
 your goal today" (threshold-event-based) than a live number. This determines a lot of the
 downstream design, so resolve it first.
+- **How and when to request the entitlement (researched 2026-08-07, re-verify against Apple's
+  current docs before actually filing — this evolves):** two tiers exist.
+  `com.apple.developer.family-controls.development` needs no approval and works immediately for
+  local dev/testing — start there, no need to wait on Apple for early prototyping. Shipping to
+  TestFlight/App Store needs the separate **"Family Controls (Distribution)"** entitlement,
+  requested via Apple's dedicated web form
+  (`developer.apple.com/contact/request/family-controls-distribution`), submitted by the Account
+  Holder (Bilal), **per bundle ID, and separately for every Screen Time app extension**
+  (`DeviceActivityMonitor`, `DeviceActivityReport`, `ShieldAction`, `ShieldConfiguration`) — a
+  commonly-missed step that causes code-signing failures at distribution time even after the
+  main app's request is approved, so file for the extensions at the same time, not as an
+  afterthought. Budget **weeks, not days** (reported range roughly 4 business days to 3+ weeks,
+  occasionally longer) — request this early relative to the rest of the phase's build, not at
+  the end.
+  - **Reasons that help Apple approve it:** Apple's own docs confirm this entitlement is **not**
+    parental-control-only — `FamilyControlsMember` explicitly supports `.individual` (a user
+    managing their *own* device), and Apple's stated acceptable categories include
+    "self-control/habit apps" alongside parental control and digital wellbeing, which is exactly
+    Forge's use case here. The request should lead with the **concrete feature/user flow**, not a
+    vague justification — e.g. "the user selects distracting social-media apps via the Family
+    Activity Picker; Forge tracks whether they stayed under a self-set daily time goal and turns
+    that into a trackable habit with streaks/points, scoped entirely to the user's own device."
+    Vague one-liners are a documented rejection cause; using the data for anything resembling
+    advertising/profiling is explicitly disallowed and would sink the request.
+  - **Real constraints that shape the feature even once granted (confirmed, not assumed):** app
+    selections are opaque tokens (`ApplicationToken`/`ActivityCategoryToken`) — Forge can never
+    learn *which* specific apps the user picked, only reference the token. Exact per-app usage
+    minutes are **never readable by the main app at all** — only renderable inside a sandboxed
+    `DeviceActivityReportExtension` view, with no export/extraction path back to Forge's own code
+    (confirms the "threshold-event, not a live number" framing above is the realistic ceiling,
+    not a pessimistic guess). Extensions have little/no network access and talk to the main app
+    only via App Group. The user can disable Screen Time entirely from system Settings (Face
+    ID/passcode) with no app-level way to prevent or detect that being about to happen.
 - Once the real data shape is confirmed: treat "stayed under your social-media-time goal
   today" as a new trackable **Bad-category** habit type (same spirit as the existing
   "Limit"-style bad habits, e.g. "Limit Coffee").
@@ -720,10 +771,14 @@ verification. Flag any genuine product/design decision for Bilal rather than gue
 - **Each template pack (starting Islamic) also sells as a standalone one-time non-consumable** for
   non-subscribers who want just that pack.
 - **Real `EntitlementService`** on StoreKit 2 (`Transaction.currentEntitlements`, `Transaction.updates`
-  listener, restore purchases) replacing `StubEntitlementService`. **Consolidate `SuggestedSectionTier`'s
-  existing direct-flag read** (`AddSectionView.swift:42` reads `section.tier == .premium` directly, NOT
-  through the service — the consolidation is already flagged as a TODO in `EntitlementService.swift`'s
-  own doc comment) into this service.
+  listener, restore purchases) replacing `StubEntitlementService`. **STALE, corrected 2026-08-07 (C1
+  from the audit):** this used to say `AddSectionView.swift:42` reads `section.tier == .premium`
+  directly bypassing the service, with a TODO flagged in `EntitlementService.swift`'s doc comment —
+  both no longer true. `AddSectionView` now resolves gating **through the service**
+  (`entitlementService.isPackUnlocked(section.id)`), and `EntitlementService.swift`'s doc comment
+  carries no such TODO. The one real remaining item: `.tier == .premium` is still read inline in 3
+  views (`CategoryDetailView.swift`, `EditSectionsView.swift`, `AddSectionView.swift`) rather than the
+  service owning tier knowledge — a minor cosmetic consolidation, not a bypass of the gate itself.
 - **Never hardcode prices** — always render `product.displayPrice` fetched live, so App Store Connect
   price changes need no app update.
 - **Paywall**: show the pack's individual price with a prominent **"or free with Premium"** callout
@@ -791,10 +846,17 @@ verification. Flag any genuine product/design decision for Bilal rather than gue
   notification "Nice consistency! Your goal is now 110") or manual (user edits anytime, same
   non-retroactive guarantee).
 
-### Dhikr / Tasbih counter — its own habit type, NOT the timer UI (decided)
-- Tap-to-increment counter with a **distinct haptic per tap**, preset goal shortcuts (**33/99/100**),
-  **reuses the quantity-habit tap-to-increment pattern** rather than living inside the timer
-  mini-player's panel (reconsidered from an earlier idea — cleaner).
+### Dhikr / Tasbih counter — SUPERSEDED (2026-08-07), see Phase B for the current decision
+**This section's "plain quantity tap, not a panel" call is reversed — kept here only for history,
+do not build against it.** The 2026-08-07 audit found this directly contradicted Phase B (which
+independently redesigned dhikr as a glass-panel interaction) with neither side referencing the
+other. Resolved 2026-08-07 (Bilal's explicit direction): **the glass-panel design wins.** Also
+note the already-shipped Phase 6 (33/99/100 preset "Quick set" buttons on a plain quantity habit)
+is itself now stale on two counts — the Quick Set buttons were already removed project-wide by
+the 2026-08-02 core-prayer consolidation pass (see the "Core prayer template behavior —
+consolidated spec" entry above, Part 1), and the plain-quantity interaction model itself is
+superseded by the panel decision below. Phase 6's dhikr habits need to be reworked onto the panel,
+not just left as-is.
 
 ### Islamic template pack — v1 content (decided)
 **Delete the current `good-islamic` section first** (`TemplateCatalog.swift:158` — broken, Arabic-only,
@@ -1456,6 +1518,20 @@ there is deliberately no translation phase here anymore.)
 
 - [ ] **Mosque-completion tracking + double points.** Planned in a 2026-08-02 chat pass, NOT started —
       queued here so a future session picks it up automatically per the Autonomous operation policy.
+      **Sequencing resolved (2026-08-07, closing the A2 conflict the audit found):** this entry's
+      "dependency now satisfied" note below only ever referred to the `CorePrayerTemplate`
+      lock-down dependency — it never mentioned Phase F/Groups at all, which made it read as
+      "buildable standalone right now." That directly contradicted Phase D, which says the whole
+      feature (including this base save-locations/2x-points part) is being built **from the start
+      wired into Groups** and can't start until Phase F exists. **Phase D's sequencing is the one
+      that stands — do not build this entry's base version standalone before Phase F.** Reasoning:
+      building the simple version now and rewiring it into Groups later means real throwaway
+      work — the location/points logic would need retrofitting to expose group visibility
+      (`GroupHabitRace` triggering, per-member stats) rather than being built with that in mind
+      from day one, the exact double-build cost Phase D's original 2026-08-03 decision was trying
+      to avoid. This entry is kept below for its still-accurate implementation details (the
+      `MosqueLocation` model, the location-precision decision, the non-blocking-tap requirement,
+      the +2-points wiring), but its overall readiness/sequencing defers entirely to Phase D.
       **Dependency now satisfied (2026-08-02):** this originally depended on the (then not-yet-started)
       prayer-template lock-down work — fixed title, singleton-per-template, hidden Repeat/Time/Goal
       sections, a `CorePrayerTemplate`-style classification to know which habits are eligible. That work
@@ -1487,6 +1563,12 @@ there is deliberately no translation phase here anymore.)
       - **Points: +2 instead of +1** (decided 2026-08-02) for a prayer completion done at a saved mosque —
         wire into `MilestoneEngine.catchUpPoints()`'s existing `ledger.cumulativePoints += done ? 1 : -1`
         line, reading the new `Completion` field for prayer-category completions specifically.
+        **Coordination note (added 2026-08-07, B2 from the audit):** this `Completion` field (and the
+        `catchUpPoints` bonus branch reading it) is also assumed to already exist by Phase B's dhikr
+        counted-vs-quick-complete bonus and Phase C's adhkar counted-vs-quick-complete bonus — as of
+        this note **none of the three has been built yet**, so whichever of this entry/Phase B/Phase C
+        is picked up **first** is the one that actually defines the field and the bonus branch; the
+        other two then genuinely reuse it. Don't assume it's already there going in.
       - Surface it in stats: a small badge (reuse the existing small-badge visual pattern already used for
         HealthKit-tracked habits) on Recent Activity / relevant Progress cards showing "prayed at a
         mosque," plus per-mosque completion counts somewhere reachable (exact placement not yet decided —
@@ -1632,16 +1714,22 @@ this must never lose or silently overwrite a user's real data.** Concretely, whe
 
 ## P3 — Confirmed fully built (verified by reading the actual code, not assumed)
 
-- [x] §1 Home weekly strip — flat 3-bar (Good/Bad/To-Do) design, windowed pager, tap-to-select-day,
+- [x] §1 Home weekly strip — flat 3-bar (Build/Destroy/Tasks, renamed 2026-08-07 from Good/Bad/To-Do
+      — display-only) design, windowed pager, tap-to-select-day,
       inline read-only-on-past-day list, all the investigation history in CLAUDE.md. Verified:
       `WeeklyRingsPagerView.swift`, `StreakLinesStripView.swift`, `HomeView.swift`.
 - [x] §2 Tab bar — native `Tab(...)` API, Home/Progress/Profile, icon+label. Verified:
       `AppTabView.swift`.
 - [x] §3 Add-habit "+" button — centered, inline as the last `List` row (moves down with content, not
-      pinned to screen bottom), hidden entirely (not just dimmed) on non-today days. Verified:
-      `HomeView.swift:169-184`.
-- [x] §4 Category picker — 3 categories (Good/Bad/To-Do), no "Templates" wording, no search icon,
-      card-based `RoundedRectangle` styling, HealthKit badge via shared `HealthKitBadgeView`.
+      pinned to screen bottom), hidden entirely (not just dimmed) on non-today days. **Verified line
+      reference corrected 2026-08-07 (C2 from the audit)** — the claim itself still holds, but
+      `HomeView.swift:169-184` had drifted (those lines are now `shouldShowMoodCard`/
+      `lastInteraction`); the button is at ~`HomeView.swift:253-257` (`isPresentingAddHabit = true`).
+- [x] §4 Category picker — 3 categories, no "Templates" wording, no search icon, card-based
+      `RoundedRectangle` styling, HealthKit badge via shared `HealthKitBadgeView`. (Category names
+      were **Good/Bad/To-Do** at the time this was verified; renamed to **Build/Destroy/Tasks** on
+      2026-08-07 — display-only, see `HabitCategory.swift`'s `displayName` — this entry's claim about
+      the picker's structure/styling is otherwise unaffected.)
       Verified: `CategoryPickerView.swift`, `CategoryDetailView.swift`, `HealthKitBadgeView.swift`.
 - [x] §5 Category detail — thematic sections (not A-Z), scrubber index (`SectionIndexStrip`),
       `.searchable`, "•••" menu with Edit + Reset as siblings (fixed this pass, see P1 history),
