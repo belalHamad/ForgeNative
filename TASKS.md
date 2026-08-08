@@ -391,7 +391,11 @@ fits) before being marked done — no "looks right."
   re-editable after, consistent with the "fixed name" spirit) and the same tasbih-counter
   tap interaction. This needs a `HabitTemplate`-like custom-dhikr creation flow, closer to
   `EditSectionDetailView`'s existing custom-habit creation pattern than to picking a
-  built-in template — reuse that precedent.
+  built-in template — reuse that precedent. **UI placement confirmed (added 2026-08-08, closing
+  GAP 6 from `GROUPS_IA_PROPOSAL.md` §5 — mostly a confirmation, this was already nearly placed):**
+  a **"+ Add your own dhikr"** row at the bottom of the **Dhikr & Tasbih** section in the
+  section-add flow (`AddSectionView`-adjacent), gated behind the Islamic pack entitlement, opening
+  the small create form described above.
 
 ### Phase B.5 — Quran habit restructure (new, added 2026-08-07, no dependencies)
 **Decided (2026-08-07):** the already-shipped single "Quran reading" template (part of Group 3
@@ -442,6 +446,14 @@ scales with usage, which Bilal explicitly flagged concern about:
 - Regular reading (time-based) does **not** need any of the above — no photo requirement, plain
   timer-style tracking (reuse the existing `HabitUnit.isTimeBased` timer interaction already
   built for other time-unit habits, per CLAUDE.md's "Timer-based interaction" section).
+- **UI placement (added 2026-08-08, closing GAP 1 from `GROUPS_IA_PROPOSAL.md` §5):** this phase
+  decided the photo-verification *behavior* but never said where the capture happens. Placement:
+  tapping a Memorization/Review habit on **Home** opens a **camera-capture sheet** (capture →
+  on-device verify → confirm/reject with a reason), incrementing the day's count on success; the
+  per-habit **submitted-pages history** (thumbnails, dedupe record) lives on that habit's own
+  **detail page** (`HabitDetailView`, reached from Progress). The verification *method* (on-device
+  vs. cloud, per the OPEN DECISION above) is unaffected by this — this note only fixes *where* the
+  UI lives, not *how* verification works.
 
 ### Phase C — Prayer consolidation + new prayer (no dependencies)
 **Decided (2026-08-03):**
@@ -518,6 +530,56 @@ unique assets:
   detailed Milestones design pass to happen **after the overall high-level plan (all of P1) is
   finished**, not interleaved phase-by-phase. Revisit Milestones as its own focused pass once
   Phase M (final polish, added below) is reached, not before.
+
+### Groups — navigation & screen architecture (decided 2026-08-08, confirmed by Bilal)
+**Full reasoning and text wireframes: `GROUPS_IA_PROPOSAL.md` (repo root) — this section records
+the confirmed decision; that file is the source of the detail below.** This closes the gap Phase
+F/G/J left open: each fully decided *what* Groups does but never *where* it lives in the app.
+
+- **Groups gets its own 4th tab**, alongside Home / Progress / Profile
+  (`Forge/Navigation/AppTabView.swift` — currently exactly 3 tabs). Reasoning: creating a group is
+  Premium-gated but joining one isn't, so a non-paying invited user needs a permanent, obviously
+  discoverable home for their group, not a buried Profile row; the feature set (Activity Feed,
+  Chat, live Habit Races, Leaderboards) is a "check back often" surface that belongs at tab-bar
+  peer status with Home/Progress, not nested under Profile. **Acceptable interim fallback** if
+  minimizing early structural change matters for the first TestFlight build: ship Phase F core as
+  a "Groups" section/row inside Profile, then promote to a 4th tab once Phase G's engagement-heavy
+  features land — the list/detail screens below are identical either way, only the entry point
+  changes, so this defers rather than reworks.
+- **Groups list screen** (the tab's root): three states — not signed in (explainer + Sign in with
+  Apple), signed in with no groups (empty state, primary "Create a Group" button that's
+  Premium-gated → opens `PaywallView` if not Premium, secondary "Join with an Invite Link", pending
+  invites list), and the main case — a vertical list of group cards (icon/category color, name,
+  stacked member avatars + count, today's Team Streak + "N/M done today"). Toolbar `[+]` menu:
+  Create Group, Join via Invite Link. Create flow: name/category/icon → first `GroupSharedHabit` →
+  invite via `UICloudSharingController`.
+- **Group detail screen: one scrolling overview page with drill-ins, not in-screen tabs.** Matches
+  the Progress page's own established "overview cards + See All drill-in" pattern, and keeps
+  heterogeneous content (habit list, streak, feed, race, leaderboard, chat) visible together at a
+  glance rather than fragmented behind taps. Top to bottom, tagged by which phase ships it: header
+  + member avatars + Team Streak hero (Phase F) → today's shared habits with per-member completion
+  dots, **tapping your own row here is the core daily action** (Phase F) → Activity Feed preview
+  (Phase F basic, full drill-in once Phase G extends it) → Habit Race card if active (Phase G #6 /
+  Phase J) → Leaderboard top-3 preview → See All (Phase G #1) → Shared Goals/Challenges preview
+  (Phase G #4) → Team Streak Calendar drill-in (Phase G #5) → Group Chat, its own full screen, never
+  inline (Phase G #9). Encouragement/Celebrations (Phase G #2) surface inline in the Activity Feed
+  plus a quick "👏" per member row, no separate screen. `•••` toolbar: invite more, edit (owner
+  only), **Leave Group** (destructive, real confirmation alert per Engineering Standard #4),
+  Seasons (Phase G #7) once built. Proofs (Phase G #8) placement stays deferred pending its own
+  privacy/moderation review, already flagged elsewhere in this file. **Build order maps directly
+  onto this layout:** Phase F ships the top three inline sections and nothing else renders yet;
+  each Phase G feature fills its already-reserved slot as it lands, no re-layout needed.
+- **The Phase J accountability partner is an ordinary 2-member group, not a special group type** —
+  confirmed, matching `GROUPS_IA_PROPOSAL.md` §4's recommendation. Two members, one
+  `GroupSharedHabit`, a `GroupHabitRace` (Phase G #6) scoped to those two — the general group
+  detail screen above already renders everything this needs. The genuinely special part is the
+  *habit*, not the group: a screen-time goal is a Destroy-category habit whose `GroupHabitCompletion`
+  carries a **privacy-safe boolean pass/fail only** (Apple's Screen Time framework never exposes
+  real usage minutes to the app — see Phase J's own entitlement/constraints note). This means Phase
+  J needs almost no new Groups UI, just the Screen Time habit itself. **Open nuance, not yet
+  resolved:** whether a 2-person group should *present* slightly differently (partner/head-to-head
+  framing vs. a leaderboard-with-two-rows) — a cosmetic choice on the same data model, flag when
+  Phase J is picked up, does not require a separate group type.
 
 ### Phase F — CloudKit social backend + Groups core (foundation for everything below)
 **Decided (2026-08-03): Apple-only backend — CloudKit, not Supabase/a custom server.** This
@@ -615,6 +677,13 @@ high-value first, infra-heavy last):
   iPhone app via `WatchConnectivity` only (simplest, matches "not a mirror" framing) or also
   needs its own CloudKit access for group data shown on-device — default to
   WatchConnectivity-only for V1 unless a specific Watch-side group feature is requested.
+- **Open question, low priority (added 2026-08-08, GAP 7 from `GROUPS_IA_PROPOSAL.md` §5):** most
+  of this phase needs no phone-side UI — the Watch app is its own target, pairing is
+  system-handled, and Siri/App Intents register with the system rather than an in-app screen. The
+  one open preference: does Bilal want a phone-side **"Apple Watch"** and/or **"Siri & Shortcuts"**
+  row in Settings (to explain/toggle the companion, or offer "Add to Siri" affordances)? Common in
+  comparable apps but optional — a real preference to confirm when this phase starts, not a
+  blocker or a proposed default.
 
 ### Phase I — Widgets (no dependencies, can run any time)
 **Decided (2026-08-03), V1 = 3 widgets, rest deferred:**
@@ -681,8 +750,9 @@ downstream design, so resolve it first.
     only via App Group. The user can disable Screen Time entirely from system Settings (Face
     ID/passcode) with no app-level way to prevent or detect that being about to happen.
 - Once the real data shape is confirmed: treat "stayed under your social-media-time goal
-  today" as a new trackable **Bad-category** habit type (same spirit as the existing
-  "Limit"-style bad habits, e.g. "Limit Coffee").
+  today" as a new trackable **Destroy-category** habit type (category display names renamed
+  2026-08-07, see `HabitCategory.swift` — same spirit as the existing "Limit"-style habits, e.g.
+  "Limit Coffee").
 - Reuse **Phase E's Milestone base+material system** for its streaks/badges — no separate
   visual language, per Phase E's own existing "reuse, don't invent a new system" precedent —
   but the exact badge/threshold detail for this specific habit type is deferred until the
@@ -692,7 +762,21 @@ downstream design, so resolve it first.
   2-person group specifically for this — "who stayed under their social-media-time goal more
   days this week" between the user and one accountability partner, same `GroupHabitRace`
   record type Phase D's mosque-race work already introduces, just a different triggering
-  metric. No new Groups infrastructure needed beyond what Phase F/G already builds.
+  metric. No new Groups infrastructure needed beyond what Phase F/G already builds. **Confirmed
+  2026-08-08: this partner group is an ordinary 2-member group, not a special group type** — see
+  the new "Groups — navigation & screen architecture" section above for the full reasoning; the
+  general group detail screen already renders everything this needs.
+- **UI placement (added 2026-08-08, closing GAP 3 from `GROUPS_IA_PROPOSAL.md` §5) — two homes
+  were unspecified, one genuinely constrained by Apple:** (a) the app-selection picker
+  (`FamilyActivityPicker`) is part of the **Screen Time habit's own creation flow** — a setup step
+  ("choose the apps to limit") when adding this Destroy-habit type. (b) The usage **report view**
+  is constrained by Apple's extension model — those numbers can only render inside a sandboxed
+  `DeviceActivityReport` extension view, never in the app's own code (already noted above); embed
+  that extension view inside the habit's **detail page**, or a dedicated **"Screen Time"** screen
+  reached from Settings — verify the exact current embedding approach against `DeviceActivity`
+  docs when this phase starts, same as the entitlement itself. **Confirmed:** the accountability-
+  partner group needs no Phase-J-specific entry point of its own — the Screen Time habit is just
+  added to an ordinary group like any other shared habit.
 
 ### Phase K — Onboarding, in-app "how to use," and template feature explainers (new, added 2026-08-07 — build only after the rest of the app is otherwise feature-complete, per Bilal's explicit sequencing)
 Three related but distinct pieces, all deferred until the app is otherwise done building so
@@ -708,8 +792,11 @@ they reflect the real final feature set rather than needing rework as more phase
   less "intelligent" than a real model). Flag for Bilal's decision when this phase starts,
   don't default silently to the cloud option given the pattern of concern already raised.
 - **Always-available in-app "how to use the app" guide** — not just a one-time first-launch
-  flow; a reference a user can return to later (e.g. from Settings/Profile) to re-learn a
-  feature, distinct from the onboarding Q&A above which only runs once.
+  flow; a reference a user can return to later to re-learn a feature, distinct from the
+  onboarding Q&A above which only runs once. **UI placement confirmed (added 2026-08-08, closing
+  GAP 5 from `GROUPS_IA_PROPOSAL.md` §5):** canonical home is **Settings → "Help & How to Use"**
+  (a browsable list of feature explainers); a "?" button in a relevant toolbar elsewhere is an
+  optional nice-to-have, not the primary path.
 - **Per-template feature explainer**: when a user adds a new template (from any category —
   Islamic pack, Group 1-4, custom, etc.), show what makes that specific habit/template useful
   and how its specific mechanic works (e.g. explain the tasbih counter interaction the first
@@ -1544,6 +1631,10 @@ there is deliberately no translation phase here anymore.)
         `HabitRepository`/`MoodRepository`'s established shape) — user-named saved locations (reuses the
         existing `Coordinate` type from `Forge/Core/Prayer/Coordinate.swift`). Small CRUD screen to add/
         manage them (name + "use current location" via `LocationService`, or manual pin drop).
+        **UI placement (added 2026-08-08, closing GAP 2 from `GROUPS_IA_PROPOSAL.md` §5):** reached
+        from **Settings → Prayer** (the section that already holds "Prayer Times / Calculation
+        Method") via a new **"My Mosques"** row → the CRUD list — keeps all prayer configuration in
+        one discoverable place rather than scattering it.
       - **Location precision decision (made 2026-08-02):** the existing `LocationService` is deliberately
         coarse (`kCLLocationAccuracyThreeKilometers`, one-shot, when-in-use, cached last-known) — correct
         for prayer-*time* calc but far too imprecise to distinguish a specific mosque. This feature needs
@@ -1711,6 +1802,10 @@ this must never lose or silently overwrite a user's real data.** Concretely, whe
   different completions for the same habit on the same day, both come back online — confirm no data
   is silently dropped from either device once resolved.
 - No dependency on Phase F and no dependency from it; can be picked up independently, any time.
+- **UI placement (added 2026-08-08, closing GAP 4 from `GROUPS_IA_PROPOSAL.md` §5):** sync is
+  mostly invisible by design, but a data-loss-sensitive feature still needs a visible status.
+  Placement: **Settings → "iCloud Sync"** — a toggle + last-synced timestamp + a plain error state
+  if sync is failing.
 
 ## P3 — Confirmed fully built (verified by reading the actual code, not assumed)
 
