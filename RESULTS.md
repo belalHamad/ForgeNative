@@ -3150,3 +3150,242 @@ while newly-earned ones read "Build 7-Day Streak" — a cosmetic split on existi
 Critically, `dedupeKey` is built from `kind`/`scopeID`(=`rawValue`)/`value`/`periodKey` and **does not
 include the title**, so the rename **cannot** re-award or duplicate milestones. Flagged rather than
 fixed: back-filling old titles would be a real data migration, which this task explicitly scoped out.
+
+## 2026-08-07 — TASKS.md read-only audit pass (findings report only; no file/code edits made)
+
+Strictly read-only audit of the full 1727-line TASKS.md: Part 1 internal consistency (every "Decided"
+note, dependency, cross-reference mapped), Part 2 cross-checked against the real codebase (every reused
+file/type/pattern opened and confirmed). **No edits made to TASKS.md or any code file, including
+obviously-safe ones — per the explicit restriction (and the note left in TASKS.md's own footer).** Bilal
+decides what to apply. Findings below, most-actionable first.
+
+### A. GENUINE CONFLICTS (two phases, contradictory decisions about the same thing)
+
+**A1 — Dhikr counter interaction: plain quantity tap (StoreKit "decided" + Phase 6 as-built) vs. a glass
+counter panel (Phase B). Directly contradictory, no cross-reference between them.**
+- The StoreKit initiative's "Dhikr / Tasbih counter — its own habit type, **NOT the timer UI** (decided)"
+  section (lines 794-797) explicitly says the counter "**reuses the quantity-habit tap-to-increment
+  pattern rather than living inside the timer mini-player's panel** (reconsidered from an earlier idea —
+  cleaner)." Phase 6, marked `[x]` done (lines 928-940), was **built that way** — a plain `.count`
+  quantity habit, no panel.
+- Phase B (lines 356-368, "Decided 2026-08-03") says the **new** dhikr tap interaction "opens a panel
+  reusing the exact visual language just built for the timer's `TimerExpandedPanel` (big glass ring/
+  counter, icon-only buttons)" — i.e. it re-introduces the panel idea the StoreKit section explicitly
+  *rejected*, and effectively **rebuilds Phase 6's shipped interaction model.**
+- Verified both ends against code: `Forge/Features/Home/TimerMiniPlayer.swift:150-152` does carry the
+  "intended to be reused for the future dhikr/adhkar counter UI" note (so Phase B's reuse target is
+  real), but the StoreKit decided-section (794-797) and Phase 6's built entry (928-940) neither
+  reference Phase B nor acknowledge being superseded. A future implementer reading the StoreKit section
+  or Phase 6 would conclude "dhikr = plain quantity, done"; Phase B says "rebuild dhikr as a panel."
+  **This is exactly the drift/duplication class this file has a documented history of.** Needs Bilal to
+  confirm which model stands and whether Phase 6's shipped dhikr gets reworked (Part D2 below reframes
+  this as an open decision).
+
+**A2 — Mosque feature: "ready to build now, dependency satisfied" (ad-hoc entry) vs. "cannot start until
+Phase F/Groups exists" (Phase D). Contradicts whether the base feature can ship before Groups.**
+- The ad-hoc "Mosque-completion tracking + double points" entry (lines 1457-1466) says
+  "**Dependency now satisfied (2026-08-02)**" — its only stated dependency is the CorePrayerTemplate
+  lock-down (confirmed built), with **no Phase F/Groups dependency** — i.e. it reads as buildable now.
+- Phase D (lines 458-465) says the same mosque feature "is being built **from the start wired into
+  Groups**, not as a standalone feature," and "**This phase cannot start until Phase F (Groups core,
+  CloudKit)** exists."
+- So: can the base mosque feature (save locations + 2× points, no group data) be built before Groups
+  (ad-hoc entry says yes) or not (Phase D says the whole thing waits)? The two entries describe one
+  feature with opposite readiness. The ad-hoc entry was never updated to point at Phase D. (Reframed as
+  an open sequencing decision in D3 below.)
+
+### B. DEPENDENCY-CHAIN INCONSISTENCIES
+
+**B1 — `GroupHabitRace` record type is attributed to three different phases; Phase D's "see Phase F's
+model list" pointer is wrong.**
+- Phase D (line 467) says to add "a `GroupHabitRace` record type (**see Phase F's model list**)."
+- Phase F's actual model list (lines 517-524) contains only `Group`, `GroupSharedHabit`,
+  `GroupHabitCompletion` — **`GroupHabitRace` is not there.**
+- Habit Races are actually **Phase G item #6** (lines 572-573), which itself notes it's "needed by
+  Phase D's mosque integration — pull this one forward if Phase D is scheduled soon after."
+- Phase J (lines 642-643) then says the race uses "the same `GroupHabitRace` record type **Phase D's
+  mosque-race work already introduces**."
+- Net: the record type's owning phase is described three inconsistent ways, and Phase D's real
+  dependency is **Phase G #6 (Habit Races), not just Phase F** — Phase D's title ("needs Phase F's Groups
+  core first") understates it. A future session building Phase D would look for `GroupHabitRace` in Phase
+  F's model list, not find it, and have to guess.
+
+**B2 — The shared "counted-vs-quick-complete / mosque points-flag" mechanism is reused by three unbuilt
+features, but none is designated as the one that defines it.**
+- Reused by: the mosque entry (lines 1487-1489, "+2 points, wire into `MilestoneEngine.catchUpPoints()`,
+  reading the new `Completion` field"), Phase B (lines 363-368, dhikr counted vs. quick, "reuse that
+  exact mechanism rather than inventing a parallel one"), and Phase C (lines 444-446, adhkar, "same
+  'counted vs. quick-complete' mechanism from Phase B, reused again").
+- Verified against code: `MilestoneEngine.catchUpPoints()` exists and its `ledger.cumulativePoints +=
+  done ? 1 : -1` line is real (`Forge/Core/Milestones/MilestoneEngine.swift:201`), **but `Completion`
+  has no such flag field today** (`Forge/Core/Models/Completion.swift` fields: id, habitID, date, count,
+  isComplete, startedAt, accumulatedElapsed, missed, goalAtCompletion, loggedAt, healthKitSampleUUIDs —
+  no `completedAtMosqueID`, no counted-vs-quick enum). So all three "reuse the existing mechanism" notes
+  point at a mechanism **that doesn't exist yet**. Coordination gap: whichever of the three is built
+  first must actually *define* the `Completion` field + the `catchUpPoints` bonus branch; the other two's
+  "reuse, don't reinvent" wording silently assumes it's already there. Not a contradiction, but a real
+  build-order trap worth an explicit "first one to build this owns the shared field" note.
+
+### C. STALE / INACCURATE CLAIMS (file:line evidence)
+
+**C1 — The `SuggestedSectionTier` "still reads its own flag directly, NOT through the service" +
+"flagged as a TODO in EntitlementService.swift's doc comment" claim is stale in two places.**
+- Claimed at: monetization "decided" bullet (lines 723-726) and Phase 0 launch audit (line 128), both
+  citing "`AddSectionView.swift:42`."
+- Evidence: `AddSectionView.swift` now resolves gating **through the service** —
+  `entitlementService.isPackUnlocked(section.id)` at lines 106-107, `unlockedSectionIDs` at line 97; the
+  literal `.tier == .premium` reads are at **:83/:97/:106, not :42** (file has shifted). And
+  `Forge/Core/Entitlements/EntitlementService.swift`'s doc comment (read lines 1-40) contains **no TODO
+  and no "SuggestedSectionTier" mention** — that flagged-TODO claim is not backed by the file.
+- The **accurate** statement of what's actually still open is the P2-corrected entry (lines 1576-1584):
+  the enum's `.tier == .premium` is still read inline in 3 views (`CategoryDetailView.swift:83`,
+  `EditSectionsView.swift:35`, `AddSectionView.swift:97/106`) rather than the service owning tier
+  knowledge — a minor cosmetic consolidation, not "the gate bypasses the service." The monetization/
+  Phase-0 wording overstates it and its `:42` line ref + doc-comment-TODO claim are both stale.
+
+**C2 — P3 §3 evidence line reference `HomeView.swift:169-184` is stale.** Those lines are now
+`shouldShowMoodCard` / `lastInteraction` (read them directly); the Add Habit "+" button is at ~253-257
+(`isPresentingAddHabit = true` at line 257). The §3 *claim* (centered inline last-row button, hidden on
+non-today) is still true — only the file:line evidence drifted. (Spot-check of the P3 "confirmed built"
+section; the other P3 entries I sampled — §2 tab bar, §11 Milestones/Badge3DView, §14 HabitUnit — check
+out against current code.)
+
+**C3 — Category display-name references are stale after the 2026-08-07 rename (Good/Bad/To-Do →
+Build/Destroy/Tasks).** Occurs at: Phase E (line 473, "3 categories (Good/Bad/To-Do)"), P3 §1 (line 1635,
+"flat 3-bar (Good/Bad/To-Do)"), P3 §4 (line 1643, "3 categories (Good/Bad/To-Do)"). Structurally still
+accurate (there are still exactly 3 categories, and the enum **rawValues** are still `good`/`bad`/`todo`)
+— only the user-facing labels changed. Low-impact, but flagged since the audit specifically asked about
+the newest changes and these now read as the internal identifiers rather than what a user sees.
+
+### D. RECOMMENDATIONS + NEWLY-SURFACED OPEN DECISIONS
+
+**D1 — Highest API-risk phases to prioritize "verify current API first" on when picked up** (ranked;
+these are the most likely to have shifted since the plan was written, so front-load the doc-check):
+  1. **Phase J (Screen Time)** — highest. `FamilyControls`/`DeviceActivity`/`ManagedSettings` need a
+     **special Apple-granted Family Controls entitlement** that may not even be obtainable for this app;
+     the phase already flags confirming the entitlement grant *before* any eng — that gate genuinely
+     should come first, since a "no" invalidates the whole phase.
+  2. **Phase F (CloudKit/CKShare/UICloudSharingController)** — participant-lookup APIs are the exact
+     kind Apple has been tightening; the phase already flags the contact-lookup path as fragile.
+  3. **Phase F.5 (SwiftData ↔ CloudKit sync)** — the `@Attribute(.unique)` on `MoodEntryModel.date` is
+     **confirmed present** (`Forge/Core/Persistence/MoodEntryModel.swift:17`), and CloudKit-backed
+     SwiftData has historically disallowed `.unique` — so the phase's own warning is well-founded and
+     this is a real design fork, not hypothetical.
+  4. **Phase B.5 option 1** — the perceptual-hash API name (`VNGenerateImageFeaturePrintRequest`) needs
+     current-name verification; and option 2 (cloud vision) is an unresolved **cost** decision (see D2).
+  5. **P0 MetricKit** and **Phase 1 (StoreKit Testing `notEntitled` fix)** — medium; both already carry
+     "verify current API" notes.
+  (Phase E's SceneKit `Badge3DView` is *low* risk — verified it's real single-material PBR at
+  `Badge3DView.swift:72-79`, exactly as Phase E describes; extend-not-replace is sound. Its only stale
+  bit is the category display names in C3.)
+
+**D2 — Phase B's "reuse the core-prayer locked-title mechanism" is only a *partial* reuse, not
+wholesale.** `CorePrayerTemplate.enforce()` (`Forge/Core/Prayer/CorePrayerTemplate.swift:118`) forces the
+*title* (reusable for Phase B's "fixed title"), but core prayers also **hide Repeat/Time** and don't lock
+the *icon*, whereas Phase B wants **title + icon** locked with **Good/Repeat/Time/Date left visible** — a
+different field-visibility profile. The implementer can reuse the title-lock but must not apply the
+CorePrayerTemplate field-hiding rules wholesale; worth a one-line note so it isn't mistaken for a
+drop-in.
+
+**D3 — Newly-surfaced open decisions not yet flagged the way B.5's photo-verification and K's
+onboarding-engine already are:**
+  - **(open) Dhikr interaction model** — the A1 conflict is really an unresolved product decision: plain
+    quantity tap (shipped in Phase 6) vs. the Phase B glass counter panel. Needs Bilal to pick one, and
+    to decide whether Phase 6's shipped dhikr habits get rebuilt. Currently presented as two
+    contradictory "decided" notes rather than one open question.
+  - **(open) Mosque base-feature sequencing** — the A2 conflict is a real decision: does the base mosque
+    feature (locations + 2× points, no group data) ship standalone in an earlier build, or only as part
+    of the Groups-integrated Phase D (which can't start until Phase F)? This materially affects whether
+    mosque tracking can be in an early TestFlight build.
+  - **(observation, not a conflict) Full-app UI localization** (Arabic/Turkish) remains **unscheduled** —
+    the StoreKit note (line 1135) defers it to "a separate full-app localization pass," and Phase L (672)
+    only covers **marketing copy**, not app-string localization. No phase currently owns translating the
+    app UI itself. Worth confirming that's intended (it appears to be, per the deferral note), just
+    noting no phase closes that loop.
+
+**D4 — No Engineering-Standard / Production-Scaling-Standard violations found in the plans themselves.**
+The new data-heavy phases explicitly cite the right standards (repository pattern for `GroupRepository`/
+`MosqueLocation`, bounded queries, the non-blocking-tap `dispatchMilestoneCheck` pattern for the mosque
+location fix, real XCUITest for new gestures). One light reinforcement: Phase F's client-side Team
+Streak / Activity Feed "query the zone across members" (lines 526-529) should carry the same bounded-
+window discipline as Standard #1 (query a date window, never all-history-across-all-members) — Phase 6.5
+already covers CloudKit quota sanity, but the per-query bounding isn't stated in Phase F itself; a
+one-line reminder there would close it.
+
+### Audit scope note
+Read all 1727 lines of TASKS.md and opened every file a phase names as a reuse/extend target that I
+could resolve (`MilestoneEngine`, `Completion`, `CorePrayerTemplate`, `TimerMiniPlayer`, `MilestoneKind`,
+`PrayerName`, `LocationService`, `Badge3DView`, `HabitSyncSettingsDetailView`, `AddSectionView`,
+`EntitlementService`, `StreakMath`, `MoodEntryModel`, `HomeView`). Everything not called out above that I
+spot-checked matched the code. This report is the entire deliverable — no TASKS.md or code changes were
+
+## 2026-08-08 — Applied fixes from the 2026-08-07 read-only audit + backfilled 2026-08-03 decisions
+
+**Context:** the audit above (2026-08-07) was strictly read-only and produced findings only. A
+follow-up cross-check (`AUDIT_FINDINGS_2026-08-08.md`, repo root — also read-only, no edits) then
+confirmed those findings were accurate and flagged that three `[x]` items from an earlier
+2026-08-03 planning pass, plus this entry's own fix-application work, had no RESULTS.md record.
+This entry closes both gaps: it logs what was actually decided/edited in TASKS.md today, and
+backfills the record for the three previously-unlogged 2026-08-03 items.
+
+**Decisions confirmed by Bilal (2026-08-07/08, in-conversation — not guessed):**
+- **A1 (dhikr interaction) resolved: the glass panel wins**, not the older plain-quantity-tap
+  decision. Panel content depends on the habit: a Tasbih habit (Phase B's Group-2 templates) shows
+  a plain tap-to-count control; "Adhkar after Prayer" (Phase C, a separate habit) shows the
+  cycling "1 of 5" variant Phase C already specified — same shared panel system, different content.
+  Phase 6's already-shipped plain-quantity dhikr habits are explicitly flagged as needing rework
+  onto this panel, not kept as a legacy alternate interaction.
+- **A2 (mosque sequencing) resolved: Phase D's sequencing stands** — the base mosque feature
+  (locations + 2x points) does not ship standalone before Phase F/Groups exists, even though the
+  CorePrayerTemplate dependency it originally cited is satisfied. Reasoning recorded in TASKS.md:
+  building it standalone first would mean real rework once Groups exists (retrofitting group
+  visibility into logic not designed for it), the exact double-build cost Phase D was written to
+  avoid.
+
+**TASKS.md edits applied (git `68c8491`):**
+- B1: corrected `GroupHabitRace`'s attribution from "Phase F's model list" (where it doesn't
+  exist) to Phase G item #6, and noted Phase D's real dependency is G #6, not just F.
+- B2: added a coordination note on the shared `Completion` counted-vs-quick-complete flag — none
+  of the three features assuming its existence (mosque, Phase B dhikr, Phase C adhkar) have built
+  it yet; whichever ships first defines it.
+- C1: corrected the monetization "decided" section's stale claim that `AddSectionView.swift:42`
+  bypasses `EntitlementService` and that a TODO exists in its doc comment — neither is true;
+  `AddSectionView` now gates through the service, and the only real remaining item is a cosmetic
+  3-view `.tier == .premium` inline-read consolidation.
+- C2: corrected P3 §3's stale `HomeView.swift:169-184` line reference (button is now ~253-257);
+  the underlying claim (centered inline "+" button, hidden on non-today) was already accurate.
+- C3: updated every remaining "Good/Bad/To-Do" reference (Phase E's milestone description, P3 §1,
+  P3 §4) to reflect the 2026-08-07 display rename to Build/Destroy/Tasks.
+- Added researched guidance to Phase J on requesting Apple's Family Controls (Distribution)
+  entitlement: the two-tier dev/distribution split, the per-bundle-ID-and-per-extension filing
+  requirement, that `.individual` authorization is a legitimate non-parental-control use case
+  Apple explicitly supports (directly relevant since Forge's use case is self-managed screen
+  time, not monitoring a child), a realistic weeks-not-days timeline, and the hard technical
+  ceiling (opaque app tokens, no raw per-app usage numbers readable by the main app, extension-only
+  sandboxed rendering) that shapes what the feature can actually show once granted.
+
+**Backfilling the three previously-unlogged 2026-08-03 `[x]` items** (flagged by the 2026-08-08
+cross-check as decided in TASKS.md with no RESULTS.md record — administrative/planning
+corrections, not code changes, which is why they were missed by this file's usual
+code-change-triggered logging habit):
+- §9 "Compete-with-friends" marked `[x]` **superseded** — its open design questions (backend
+  choice, privacy/tone) were resolved by the same 2026-08-03 pass that produced the Groups
+  initiative (Phase F/G): CloudKit backend, per-group `CKShare` privacy model. Closed out as
+  superseded by Phase F/G rather than left as a separate unresolved item.
+- §10 "StoreKit 2 subscription" marked `[x]` **corrected** — re-audit confirmed
+  `StoreKitEntitlementService.swift` genuinely implements the real StoreKit 2 flow (contradicting
+  the entry's prior "unbuilt" claim); only the `SuggestedSectionTier` cosmetic consolidation
+  remained open (see C1 above for its current accurate state).
+- §7 "Platform reach" marked `[x]` **split** — its flat bucket (WidgetKit, Watch/Siri, Contacts,
+  push, iCloud sync) was re-homed onto real phases: WidgetKit → Phase I, Watch/Siri/Shortcuts →
+  Phase H, Contacts → folded into Phase F's invite mechanism as an optional fallback, iCloud sync
+  split into Phase F (group data) vs. the new Phase F.5 (personal data, added because the original
+  line was too vague to build against safely).
+
+**Verified:** both the 2026-08-07 audit's findings and this pass's corrections were independently
+re-confirmed by the 2026-08-08 cross-check (`AUDIT_FINDINGS_2026-08-08.md`) before this log entry
+was written — it found no new contradiction between these fixes and anything already shipped,
+with one non-blocking note worth carrying forward: Phase 6's shipped dhikr also has a distinct
+counting haptic and a beads icon that the A1 panel-rework note above doesn't explicitly mention
+carrying forward — flag for whoever picks up the rework, not a blocker.
+made.
