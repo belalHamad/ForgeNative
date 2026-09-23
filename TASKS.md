@@ -130,6 +130,8 @@ drifted since:
   trusting" precedent.
 
 ### Phase 1 — Fix the 3 failing StoreKitEntitlementServiceTests
+**DONE 2026-09-23** — root cause was the Simulator StoreKit Test environment, not code; all 4 pass on
+the real device, Simulator runs now skip with a reason. See the resolved entry under the StoreKit initiative.
 Root-cause and fix `"notEntitled"` (working theory already on record: `SKTestSession`'s
 injected transaction may not be visible to a freshly-constructed
 `StoreKitEntitlementService` without a settle/await step on `Transaction.updates` — verify
@@ -1321,7 +1323,7 @@ habit IDs stable and sensible so it can reference them later without rework.
       says "Applies to all 11 (Fard + Sunnah + Witr)" — that count is now stale too (Qiyam is a 12th
       core-prayer template as of this pass); updated in place below.
 
-- [ ] **NEEDS INVESTIGATION — 3 `StoreKitEntitlementServiceTests` fail with `"notEntitled"`
+- [x] **RESOLVED 2026-09-23 — 3 `StoreKitEntitlementServiceTests` fail with `"notEntitled"`
       (pre-existing, unrelated to the core-prayer work above).** Discovered 2026-08-02 while running the
       full `ForgeTests` suite after the core-prayer change (57 tests, 3 failures — all in this one file;
       the other 54, including all 7 new core-prayer tests, pass). Failing:
@@ -1344,6 +1346,14 @@ habit IDs stable and sensible so it can reference them later without rework.
       (`Transaction.currentEntitlements`'s async sequence, when the test's injected transaction actually
       becomes enumerable) rather than guess-fixing with an arbitrary delay. Do not assume the working
       theory above is correct without that evidence.
+      **Resolution (2026-09-23): the working theory was wrong — not a settle/timing issue, and not a
+      code bug.** `buyProduct` itself throws; the Simulator log shows `storekitd` rejecting the session
+      (`com.bilalhammad.forge.native is not installed for development`, `SKInternalErrorDomain Code=3`) —
+      a known Xcode 26.6 / iOS 26.5 Simulator issue with `xcodebuild test`. Attaching the `.storekit`
+      file to the scheme's Test action did not help (tried, reverted). **All 4 tests pass unchanged on
+      the real iPhone.** Fix: purchases go through a `buy(_:)` helper that converts exactly
+      `StoreKitError.notEntitled` into `XCTSkip` with the reason, so Simulator runs skip instead of
+      false-failing, and the tests resume automatically once the environment works. See RESULTS.md.
 
 - [x] **In-app timer experience redesign (2026-08-02).** Mini-player / card row / expanded options
       panel — **in-app only**, the Lock Screen Live Activity (`HabitTimerLiveActivity.swift`,

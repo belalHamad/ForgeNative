@@ -3389,3 +3389,33 @@ with one non-blocking note worth carrying forward: Phase 6's shipped dhikr also 
 counting haptic and a beads icon that the A1 panel-rework note above doesn't explicitly mention
 carrying forward — flag for whoever picks up the rework, not a blocker.
 made.
+
+## 2026-09-23 — 3 failing `StoreKitEntitlementServiceTests` (`"notEntitled"`) — root-caused, resolved
+
+**Root cause (evidence, not theory):** the 2026-08-02 working theory (injected transaction not yet
+visible to a fresh service) was wrong. The failing line in all three tests is `session.buyProduct(...)`
+itself, before `StoreKitEntitlementService` is involved. `SKTestSession` logs `Error saving configuration
+file: SKInternalErrorDomain Code=3` on every call, and the Simulator's own log shows why:
+`storekitd: saveConfigurationData(_:bundleID:) — com.bilalhammad.forge.native is not installed for
+development`. The StoreKit Test environment never loads under `xcodebuild test` on the iOS 26.5
+Simulator (Xcode 26.6) — a known toolchain issue reported by other projects, reproduced here on two
+different simulators (including a never-used one). `testNothingUnlockedWhenNoPurchases` only passed
+because it never buys anything. This test file had never actually passed before (Phase 9's 46-test run
+predates it).
+
+**Tried and reverted:** attaching `Configuration/Forge.storekit` to the scheme's Test action as well —
+no effect, same rejection.
+
+**Verified:** on the real iPhone ("Bilal iPhone", 13 Pro Max), all 4 tests pass with **no code change**
+(`xcodebuild test -destination id=62AB4A14-… -only-testing:ForgeTests/StoreKitEntitlementServiceTests`
+→ 4/4 passed). So the service, `.storekit` config, and test logic are all correct.
+
+**Change:** test file only. Purchases go through a new `buy(_:)` helper that turns exactly
+`StoreKitError.notEntitled` into `XCTSkip` with the reason. Simulator: full `ForgeTests` = 66 tests,
+0 failures, 3 skipped (with message). Device: 4/4 pass. Any other StoreKit error still fails the test,
+and the skip disappears on its own once the Simulator environment works. No app code changed.
+
+**Still open:** real sandbox purchase through Apple's system purchase sheet remains a manual device
+check for Bilal (Phase 7), unchanged.
+
+**Production Scaling Standards:** not applicable (test-only change, no database/backend/API code).
