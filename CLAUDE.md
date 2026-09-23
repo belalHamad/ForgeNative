@@ -272,6 +272,9 @@ RLS is enabled on all tables. Credentials live in `.env` (`EXPO_PUBLIC_SUPABASE_
 
 ## Swift Rewrite (ForgeNative)
 
+**Code signing (bundle IDs, capabilities, IAP product IDs, recovering from deleted
+certificates): see `SIGNING.md`.**
+
 The native SwiftUI rewrite lives in a separate Xcode project (`ForgeNative/`,
 bundle ID `com.bilalhammad.forge.native`) — everything above this section
 describes the original Expo/RN app. The Production Scaling Standards section
