@@ -407,40 +407,40 @@ in the Islamic pack, `good-islamic-quran-character`) is replaced by three separa
   (minutes), not pages — a different unit from the two above, since casual reading isn't
   naturally page-counted the same way memorization/review progress is.
 
-**OPEN DECISION — needs Bilal's actual input before building, not a silent implementation
-choice (flagged 2026-08-07 per his own explicit "I don't know the right approach, don't want
-this to cost me" note):** for Memorization and Review specifically, Bilal wants photo evidence
-— the user photographs the physical Quran page(s) they just worked on, and the app should
-verify (a) it's genuinely a Quran page, (b) it's a page distinct from ones already submitted
-(so someone can't repeatedly photograph the same page to fake progress), and (c) if the day's
-goal is e.g. 2 pages, two distinct-page photos are required to satisfy it. Three real options,
-each with a genuinely different cost/accuracy tradeoff — this needs a real decision, not a
-default guess, specifically because option (b) below has an ongoing *recurring* cost that
-scales with usage, which Bilal explicitly flagged concern about:
-  1. **Fully on-device (Apple's own `Vision`/`VisionKit`), zero ongoing cost.** Use
-     `VNGenerateImageFeaturePrintRequest` (or similar current perceptual-similarity API —
-     verify exact current name) to detect "is this the same photo/page as one already
-     submitted" cheaply and privately, no network call, works offline, no per-use cost ever.
-     Weaker on genuinely confirming "this is a Quran page" specifically (would accept any
-     photo unless paired with a lightweight on-device classifier or a simple on-device OCR
-     Arabic-script-density sanity check) and can't identify *which* Surah/page number.
-  2. **Cloud vision-capable AI API call per photo**, sending the image to a model that can
-     genuinely read "yes this is a Mushaf page, this is Surah X ayah Y-Z, and it's different
-     from these prior submissions." Much more accurate and can do real semantic verification,
-     but this is a **real, recurring operating cost** that scales directly with active users ×
-     daily submissions — fundamentally different from a one-time build cost, and the exact
-     thing Bilal flagged concern about. Needs a real per-call cost estimate at realistic usage
-     before this is a responsible default.
-  3. **Hybrid, pragmatic default given the stated cost sensitivity**: on-device perceptual-hash
-     dedup (option 1's free duplicate-detection) plus a simple on-device Arabic-script-density/
-     structure check (also free, `Vision` text detection without full OCR) as "good enough"
-     fraud resistance, explicitly **not** attempting full page/Surah identification. Cheapest,
-     private, zero recurring cost, but the weakest guarantee of the three — accepts "a page of
-     Arabic text" rather than confirming "specifically a Quran page, specifically this Surah."
-  **Recommendation if asked to pick a default: option 3**, given the cost concern was raised
-  unprompted and explicitly — but this is genuinely Bilal's call, not something to silently
-  build one way. Flag it again when this phase is actually picked up rather than assuming this
-  note settles it permanently.
+**RESOLVED (2026-08-08, closes the prior OPEN DECISION — Bilal confirmed on-device-only, but
+raised the bar on "smart/can't be gamed" and added a real Groups link):**
+- **On-device only, zero recurring cost — confirmed, not the cloud option.** But not the weak
+  "hybrid" fallback that was originally proposed as the free default (perceptual-hash dedup +
+  bare script-density check, which only confirms "a page of Arabic text," not really a Quran
+  page) — Bilal explicitly wants this **genuinely hard to fool**, not just cheap. Upgraded
+  on-device design, still fully free/private/offline:
+  1. **Bundle the full Quran text on-device** (public-domain, e.g. a Tanzil.net-sourced
+     Uthmani-script corpus, shipped as a small bundled JSON/SQLite asset — no network, no
+     per-user cost, one-time app-size increase only).
+  2. **Real on-device Arabic OCR** via `Vision`'s `VNRecognizeTextRequest` (`recognitionLanguages`
+     including `"ar"` — confirm current API/language support before building, per this project's
+     standing "verify current APIs" rule) to extract the actual text from the photographed page.
+  3. **Fuzzy-match the extracted text against the bundled corpus** to confirm it's real Quran
+     text and identify *which* Surah/ayah range — this is the meaningful upgrade over the old
+     "hybrid" option: genuine content verification (not just "looks like Arabic"), and gets
+     page/Surah identification that was previously only listed under the costly cloud option,
+     with zero recurring cost since the corpus ships in the app.
+  4. **Keep perceptual-hash dedup** (`VNGenerateImageFeaturePrintRequest`, as originally
+     scoped) alongside the OCR match, so a resubmitted photo of the same physical page is still
+     caught even if OCR alone might not distinguish two visually-similar pages.
+  Net effect: OCR-against-real-corpus + dedup together are a much stronger, name-the-actual-
+  content guarantee than the original weak fallback, while staying in the free/private/on-device
+  column Bilal picked — the cloud option is dropped, not deferred.
+- **New: link to Groups (Bilal's explicit ask, 2026-08-08).** When a Memorization/Review habit
+  is a `GroupSharedHabit` in a group that has photo-verification/proof-sharing turned on, a
+  member's submitted verification photos become visible to the rest of that group — i.e. this
+  is the first concrete, decided use case for **Phase G #8 (Proofs)**, which was previously just
+  a deferred placeholder pending "a real moderation/privacy think-through." That review is still
+  required before Phase G #8/this linkage ships (unchanged — a group-visible photo feature needs
+  real thought on reporting/opt-out, not skipped because a use case now exists), but the linkage
+  itself — per-group toggle, `CKAsset`-backed shared photo, only the OCR-confirmed/deduped photo
+  is what's shared (never a rejected/failed submission) — is now the confirmed design target for
+  Phase G #8 rather than an abstract future feature.
 - Review needs the equivalent same-day distinct-page logic as Memorization (Bilal's message
   said "same for Review" — treat both identically for this feature, not two different rules).
 - Regular reading (time-based) does **not** need any of the above — no photo requirement, plain
@@ -452,8 +452,8 @@ scales with usage, which Bilal explicitly flagged concern about:
   on-device verify → confirm/reject with a reason), incrementing the day's count on success; the
   per-habit **submitted-pages history** (thumbnails, dedupe record) lives on that habit's own
   **detail page** (`HabitDetailView`, reached from Progress). The verification *method* (on-device
-  vs. cloud, per the OPEN DECISION above) is unaffected by this — this note only fixes *where* the
-  UI lives, not *how* verification works.
+  OCR-against-corpus + dedup, per the RESOLVED decision above) is unaffected by this — this note
+  only fixes *where* the UI lives, not *how* verification works.
 
 ### Phase C — Prayer consolidation + new prayer (no dependencies)
 **Decided (2026-08-03):**
@@ -531,6 +531,72 @@ unique assets:
   finished**, not interleaved phase-by-phase. Revisit Milestones as its own focused pass once
   Phase M (final polish, added below) is reached, not before.
 
+### Phase E.5 — Progress page redesign v2 (new, decided 2026-08-08, no dependencies, supersedes the P3 §6 entry below)
+
+**Why:** the currently-shipped Progress page (P3 §6 below) is a flat stack of cards with no
+hierarchy — a real audit against `PROGRESS_PAGE_CANDIDATES.md`'s own psychology research found
+it risks the exact overload it was supposed to avoid ("don't give the user 10 numbers at once").
+Redesigned in a chat pass 2026-08-08 into four sections, top to bottom, each answering one
+question — confirmed with Bilal, replaces the existing card order entirely:
+
+1. **Today's Progress (top, most important).** Day/Week/Month/Year period switch (only shown if
+   the user has enough history for a given period). Headline: a simple fraction (e.g. "7/10 habits
+   done") + a progress bar, then exactly **three** secondary numbers, no more:
+   - **Consistency %** — a trailing completion-rate over the selected period, reusing the existing
+     per-habit "scheduled days since start" logic `Habit Trends` already computes (a habit added
+     mid-period only counts the days it actually existed for, not the full period) — this is
+     continuity/commitment, not goal-hitting.
+   - **Goals %** — of the user's quantity/count-type habits specifically, the % that reached
+     **100% of goal** for the period (not partial credit) — deliberately a different measure from
+     Consistency so the two never read as duplicates of the same number.
+   - **Points** (display label — see the naming/bonus decision below; "XP" was considered and
+     dropped as a separate mechanic, see below).
+   - Day view defaults to today only; Week/Month/Year show the period-appropriate aggregate using
+     the same scoped-to-actual-scheduled-days rule as Consistency above, not a naive average.
+
+2. **Trends ("am I improving?").** One blended number — overall completion rate across all three
+   categories (Build+Destroy+Tasks combined into a single score, **confirmed 2026-08-08**, not a
+   per-category switcher) — a delta arrow vs. the prior period, and one simple bar/line graph.
+   Period toggle: 7 / 30 / 90 days. Deliberately not 15 separate per-category/per-habit graphs.
+
+3. **Insights ("what did Forge notice?").** **2-3 insights only, rotating** based on which are most
+   statistically notable that period (e.g. best day of week, strongest habit, best time of day) —
+   never all shown at once. Reuses "Growth opportunity" framing instead of "Weakest habit" for the
+   one negative-leaning insight, matching this app's existing non-judgmental-framing precedent
+   (Weekly Reflection's own framing, CLAUDE.md/§13) — same underlying data, softer label.
+
+4. **Milestones — moved to the bottom of the page** (was higher in the old card order). Recent
+   Activity and Habit Trends cards fold into/behind Insights and Trends above rather than existing
+   as separate flat cards — exact final card boundaries are a routine implementation call at build
+   time, the four-section *hierarchy* above is the actual decision.
+
+**Points/XP naming + weighted-completion bonus (resolved 2026-08-08, closing Bilal's "should mosque
+prayer / real dhikr tap-through be worth more?" question):** this does **not** need a new dual-
+currency system. It's already the exact shape of the existing, already-decided-but-unbuilt bonus
+mechanism from Phase B (dhikr counted-vs-quick-complete), Phase C (adhkar counted-vs-quick-
+complete), and the Mosque-completion-tracking entry (P2, "+2 instead of +1" for a prayer done at a
+saved mosque) — all three already read/write the same planned `Completion` boolean/enum field into
+`MilestoneEngine.catchUpPoints()`'s bonus branch (see that entry's "Coordination note," P2 below).
+Progress page's headline number is just that same points ledger, displayed — **default label
+"Points"**, not "XP" (avoid implying a second, disconnected currency; revisit only if Bilal
+specifically wants the marketing-polish rename later, purely cosmetic either way).
+**New: standardize the bonus amount across all three planned uses** (currently only mosque had a
+number, dhikr/adhkar just said "more points" with nothing decided) — **use the same +2-instead-
+of-+1 (2x) bonus for every "verified/engaged completion" case**, not three different arbitrary
+numbers: mosque-prayer, real tasbih tap-through dhikr, and cycling-through-the-panel adhkar all
+grant 2x. Whichever of those three entries is built first still defines the shared field/branch
+per the existing coordination note; this just fixes what the bonus is worth everywhere it's used.
+
+**Per-habit-type "smart" detail pages (Bilal's point 4, agreed as the most important piece) — this
+is its own research task, not a UI tweak:** the existing per-habit detail page is one generic
+template today. Needs a systematic pass, one per **habit type** actually present in this app —
+prayer/mosque-eligible, dhikr/tasbih-counter, plain quantity/Build, Destroy/limit, timer/duration,
+HealthKit-linked, Quran memorization/review (photo-verified, Phase B.5), regular Quran reading
+(time-based), Screen Time/Destroy (Phase J) — mirroring the depth `PROGRESS_PAGE_CANDIDATES.md`
+already went into for prayer specifically (its H1-H4 entries), extended to every other type. Not
+started; queue as the next research pass before this phase's detail-page work begins, same
+"candidates file" methodology.
+
 ### Groups — navigation & screen architecture (decided 2026-08-08, confirmed by Bilal)
 **Full reasoning and text wireframes: `GROUPS_IA_PROPOSAL.md` (repo root) — this section records
 the confirmed decision; that file is the source of the detail below.** This closes the gap Phase
@@ -576,10 +642,19 @@ F/G/J left open: each fully decided *what* Groups does but never *where* it live
   *habit*, not the group: a screen-time goal is a Destroy-category habit whose `GroupHabitCompletion`
   carries a **privacy-safe boolean pass/fail only** (Apple's Screen Time framework never exposes
   real usage minutes to the app — see Phase J's own entitlement/constraints note). This means Phase
-  J needs almost no new Groups UI, just the Screen Time habit itself. **Open nuance, not yet
-  resolved:** whether a 2-person group should *present* slightly differently (partner/head-to-head
-  framing vs. a leaderboard-with-two-rows) — a cosmetic choice on the same data model, flag when
-  Phase J is picked up, does not require a separate group type.
+  J needs almost no new Groups UI, just the Screen Time habit itself. **Resolved (2026-08-08):**
+  a 2-member group DOES present differently — **partner/head-to-head framing**, not the ordinary
+  N-member leaderboard-with-rows. Concretely: when `Group.members.count == 2`, the detail screen's
+  Team Streak + Leaderboard cards are replaced by a single **head-to-head widget** — the two
+  members' avatars/photos side by side (a "face-off" layout, not a ranked list), with shared-
+  achievement copy underneath instead of a score comparison (e.g. "5 days in a row together" /
+  "You both completed today ✓✓") — emphasizing mutual accomplishment over competitive ranking,
+  since a 1:1 accountability pairing (gym buddy, screen-time partner) reads as a relationship, not
+  a leaderboard entry. Still the same underlying data model (`GroupHabitCompletion`,
+  `GroupHabitRace` if active) — this is a presentation-layer branch on member count, not a
+  separate group type or new record type. Needs its own small SwiftUI view
+  (`GroupHeadToHeadCard` or similar, routine naming) conditionally rendered in place of the
+  standard Leaderboard/Team Streak cards; N&gt;2 groups are unaffected.
 
 ### Phase F — CloudKit social backend + Groups core (foundation for everything below)
 **Decided (2026-08-03): Apple-only backend — CloudKit, not Supabase/a custom server.** This
@@ -677,13 +752,13 @@ high-value first, infra-heavy last):
   iPhone app via `WatchConnectivity` only (simplest, matches "not a mirror" framing) or also
   needs its own CloudKit access for group data shown on-device — default to
   WatchConnectivity-only for V1 unless a specific Watch-side group feature is requested.
-- **Open question, low priority (added 2026-08-08, GAP 7 from `GROUPS_IA_PROPOSAL.md` §5):** most
-  of this phase needs no phone-side UI — the Watch app is its own target, pairing is
-  system-handled, and Siri/App Intents register with the system rather than an in-app screen. The
-  one open preference: does Bilal want a phone-side **"Apple Watch"** and/or **"Siri & Shortcuts"**
-  row in Settings (to explain/toggle the companion, or offer "Add to Siri" affordances)? Common in
-  comparable apps but optional — a real preference to confirm when this phase starts, not a
-  blocker or a proposed default.
+- **Settings placement — resolved (2026-08-08), Bilal confirmed this is a routine call, not a
+  blocker:** two separate rows, **"Apple Watch"** and **"Siri & Shortcuts"**, placed together
+  (same visual group, adjacent rows) near the existing Calendar/Reminders/iCloud sync rows in
+  `SettingsView` — matches this file's established "each integration gets its own discoverable
+  row" precedent (My Mosques, iCloud Sync). "Apple Watch" surfaces companion pairing status;
+  "Siri & Shortcuts" offers "Add to Siri" affordances for the App Intents above. Routine
+  implementation decision, not revisited further unless Bilal objects when Phase H is built.
 
 ### Phase I — Widgets (no dependencies, can run any time)
 **Decided (2026-08-03), V1 = 3 widgets, rest deferred:**
@@ -781,16 +856,47 @@ downstream design, so resolve it first.
 ### Phase K — Onboarding, in-app "how to use," and template feature explainers (new, added 2026-08-07 — build only after the rest of the app is otherwise feature-complete, per Bilal's explicit sequencing)
 Three related but distinct pieces, all deferred until the app is otherwise done building so
 they reflect the real final feature set rather than needing rework as more phases land:
-- **First-launch onboarding Q&A**: ask the user's name and their goal(s) for using the app,
-  then generate suggested habits/goals from their answers ("based on what you told me,
-  intelligently" — Bilal's own framing). **Open decision, not yet resolved:** whether "based
-  on your answers, smartly" means a real generative/LLM-backed suggestion step (which — same
-  cost caveat as Phase B.5's photo verification — would be a real recurring API cost per new
-  user, worth flagging explicitly since Bilal has already raised cost sensitivity once this
-  session) or a simpler deterministic rule-based mapping from a handful of Q&A answers to the
-  existing template catalog (free, no network dependency, easier to get exactly right, but
-  less "intelligent" than a real model). Flag for Bilal's decision when this phase starts,
-  don't default silently to the cloud option given the pattern of concern already raised.
+- **First-launch onboarding Q&A — RESOLVED (2026-08-08):** rule-based (free, deterministic, no
+  network/API dependency), same call as Phase B.5's photo verification and for the same reason —
+  Bilal explicitly does not want a real per-user recurring AI cost here. **But he was explicit
+  that "rule-based" must not read as flat/generic** — the flow needs to visibly feel like the app
+  understood the user and is building something for them, "give the user confidence." That's a
+  design/copywriting problem, not a model problem, and is fully achievable with a fixed
+  question→template mapping table plus known onboarding UX techniques (same pattern class Noom/
+  Duolingo/Headspace use for their own rule-based onboarding — verify these are still accurate
+  reference points if this phase is picked up far in the future, but the *techniques* below don't
+  depend on any particular app staying the same):
+  1. **One question per screen, conversational phrasing**, not a form. E.g. "What brought you to
+     Forge?" (multi-select, 2 max) → Build better habits / Break a bad habit / Stay on top of
+     tasks / Grow spiritually. Each answer chip gets a brief, immediate reflected-back line before
+     advancing ("Got it — we'll help with that.") so it visibly registers each answer rather than
+     silently collecting it.
+  2. **Real branching, not just a flat form** — still 100% deterministic/rule-based (a decision
+     tree, no model needed), but the second question's options change based on the first answer
+     (e.g. picking "Grow spiritually" surfaces a second question specific to the Islamic pack:
+     Prayer consistency / Quran & Dhikr / both; picking "Break a bad habit" surfaces a second
+     question naming actual Destroy-category examples: phone/social media, smoking, junk food).
+     This is what makes it *feel* like it's listening rather than running a static script, even
+     though it's just an if/else tree over fixed answers.
+  3. **A short "building your plan" transition** after the last question — 2-3 seconds, rotating
+     status lines ("Reviewing your goals…", "Matching habits that fit…", "Personalizing your
+     plan…") before revealing results. Purely cosmetic (the lookup table resolves instantly), but
+     a well-established technique (this exact pattern is why Duolingo/Noom's onboarding *feels*
+     computed even though it's a lookup) for manufacturing perceived effort/intelligence — cheap
+     to build, real effect on trust.
+  4. **Reveal screen ties every suggestion back to a specific answer**, not just a bare checklist —
+     each pre-checked starter habit gets a one-line rationale sourced from the same answer that
+     produced it ("Fajr — because you said prayer consistency matters" / "Screen Time limit —
+     because you said phone use is a struggle"). This is what actually delivers "the app knows
+     what it's doing," concretely, not just tone.
+  5. **User can uncheck any suggestion before committing** — preserves agency, avoids the
+     onboarding feeling like it decided *for* them.
+  6. **Closing message keyed to their top-stated goal** (a small fixed set of encouraging closing
+     lines, one per goal category, still zero-cost lookup) rather than one generic "You're all
+     set!" for everyone.
+  Question set + the goal→template mapping table itself (exact templates suggested per answer) is
+  a routine implementation decision at build time, using this project's real template catalog —
+  not re-litigated here.
 - **Always-available in-app "how to use the app" guide** — not just a one-time first-launch
   flow; a reference a user can return to later to re-learn a feature, distinct from the
   onboarding Q&A above which only runs once. **UI placement confirmed (added 2026-08-08, closing
@@ -916,9 +1022,10 @@ verification. Flag any genuine product/design decision for Bilal rather than gue
 - **Exactly one notification per prayer** — **not at adhan time** (deliberate: redundant with dedicated
   adhan apps users already have).
 - Timed at **adhan + iqama-delay + prayer-duration**, both offsets **user-configurable per prayer** in
-  Settings. Defaults: **Fajr 30+20 = 50 min** after adhan; **Dhuhr/Asr/Maghrib 10+15 = 25 min** after
-  adhan. **Isha's default was NOT explicitly specified by Bilal — ASSUMED 10+15 = 25 min to match the
-  Dhuhr/Asr/Maghrib pattern; flag for his review, easy to change.**
+  Settings. Defaults: **Fajr 30+20 = 50 min** after adhan; **Dhuhr/Asr/Maghrib/Isha 10+15 = 25 min**
+  after adhan. **Isha's 25 min default CONFIRMED by Bilal (2026-08-08)** — keep as-is, matching
+  Dhuhr/Asr/Maghrib; it's already user-editable per-prayer in Settings, so no further action needed
+  here. (Previously flagged as an unconfirmed assumption — that flag is now resolved.)
 
 ### Progressive / auto-increasing goals — generalized, not Islamic-specific (decided)
 - Applies to **any quantity-type habit**, not just the dhikr counter.
@@ -1049,8 +1156,9 @@ habit IDs stable and sensible so it can reference them later without rework.
       `PrayerNotificationScheduler` — one reminder per prayer habit at `adhan + iqamaDelay +
       prayerDuration` (never at adhan), scheduled as **non-repeating per-day triggers over a rolling
       window** (prayer times shift daily). `PrayerOffsets` + per-prayer offsets in `PrayerPreferences`
-      (defaults Fajr 30+20=50, Dhuhr/Asr/Maghrib/**Isha** 10+15=25 — **Isha is my assumption**, still
-      flagged for Bilal). Notification settings **reuse the per-habit pattern** — a prayer branch in
+      (defaults Fajr 30+20=50, Dhuhr/Asr/Maghrib/**Isha** 10+15=25 — **Isha's 25 min confirmed by
+      Bilal 2026-08-08**, no longer just an assumption). Notification settings **reuse the per-habit
+      pattern** — a prayer branch in
       `HabitSyncSettingsDetailView` with the toggle + two offset steppers (Calendar/Reminders hidden;
       they don't apply), plus a footer stating the window lock is unaffected. **Hard invariant HELD and
       PROVEN:** the lock path (`PrayerDayState`, `PrayerWindowCatchUp`) never reads `notificationsEnabled`
@@ -1834,6 +1942,10 @@ this must never lose or silently overwrite a user's real data.** Concretely, whe
       Best Day/Time & Streak Distribution, Recent Activity, Milestones, Habit Trends, in spec order.
       No literal rings anywhere. Verified: `ProgressScreenView.swift`, `ConsistencyHeatmapCard.swift`,
       `BestDayTimeStreakDistributionCard.swift`.
+      **Superseded (2026-08-08):** this flat card order is being replaced — see **Phase E.5**
+      above (Today's Progress / Trends / Insights / Milestones-at-bottom, plus per-habit-type smart
+      detail pages). Kept `[x]` since it accurately describes what shipped historically; do not
+      treat this entry as the still-current design when Phase E.5 is picked up.
 - [x] §7 Repository-pattern architecture — followed throughout (`HabitRepository`,
       `TemplateSectionRepository`, `MilestoneRepository`, `MoodRepository`, each with a real
       SwiftData + in-memory implementation). This is the seam §7's future consumers would use;
